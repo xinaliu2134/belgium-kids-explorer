@@ -678,6 +678,60 @@
       display: inline-flex; align-items: center; gap: 3px;
     }
 
+    /* ── RATING DISPLAY ─────────────────────────── */
+    .venue-rating {
+      font-size: 11px; color: #B8860B; font-weight: 600;
+      display: inline-flex; align-items: center; gap: 3px;
+      margin-left: 2px;
+    }
+    .venue-rating .rating-stars { color: #DAA520; letter-spacing: -1px; }
+    .venue-rating .rating-num { color: #B8860B; }
+    .venue-rating .rating-count { color: var(--text-muted); font-weight: 400; }
+
+    .detail-rating {
+      display: flex; align-items: center; gap: 8px;
+      margin: 8px 0 12px;
+      padding: 8px 12px;
+      background: #FFFBF0;
+      border: 1px solid #F0E6CC;
+      border-radius: var(--radius-sm);
+    }
+    .detail-rating-stars {
+      font-size: 18px; color: #DAA520; letter-spacing: -1px;
+    }
+    .detail-rating-num {
+      font-size: 16px; font-weight: 700; color: #B8860B;
+    }
+    .detail-rating-count {
+      font-size: 12px; color: var(--text-muted);
+    }
+    .detail-rating-sep {
+      color: var(--text-muted); font-size: 14px;
+    }
+
+    /* Sort control */
+    .sort-control {
+      display: inline-flex; align-items: center; gap: 4px;
+      margin-left: auto; flex-shrink: 0;
+    }
+    .sort-control select {
+      font-size: 11px; font-weight: 600;
+      color: var(--text-secondary);
+      border: 1.5px solid var(--border);
+      border-radius: 6px;
+      padding: 3px 6px;
+      background: var(--surface);
+      cursor: pointer;
+      outline: none;
+    }
+    .sort-control select:focus {
+      border-color: var(--primary);
+    }
+    .sort-control label {
+      font-size: 11px; color: var(--text-muted);
+      white-space: nowrap;
+    }
+
     /* -- NEAR ME BUTTON -- */
     .nearme-btn {
       background: none; border: none;
@@ -1142,6 +1196,8 @@
   <a href="https://xinaliu2134.github.io/spain-kids-explorer/">Spain 🇪🇸</a>
   <span style="color:rgba(255,255,255,.25)">|</span>
   <a href="https://xinaliu2134.github.io/italy-kids-explorer/">Italy 🇮🇹</a>
+  <span style="color:rgba(255,255,255,.25)">|</span>
+  <a href="https://xinaliu2134.github.io/uk-kids-explorer/">UK 🇬🇧</a>
 </div>
 
 <!-- -- HEADER -- -->
@@ -1196,8 +1252,16 @@
   <aside class="sidebar" id="sidebarSheet" style="position:relative;">
     <div class="bottom-sheet-handle" id="bottomSheetHandle"></div>
     <div class="sidebar-header">
-      <div class="result-count" id="resultCount">
+      <div class="result-count" id="resultCount" style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;">
         <span id="resultCountText">Search a region to discover kids venues</span>
+        <div class="sort-control" id="sortControl" style="display:none;">
+          <label for="sortSelect">Sort:</label>
+          <select id="sortSelect" onchange="applySortOrder(this.value)">
+            <option value="default">Default</option>
+            <option value="rating">Top rated</option>
+            <option value="name">A-Z</option>
+          </select>
+        </div>
       </div>
       <div class="category-summary" id="categorySummary"></div>
     </div>
@@ -2044,6 +2108,61 @@ async function fetchOverpass(query) {
 }
 
 
+// ── RATING HELPERS ───────────────────────────────
+function formatRating(venue) {
+  if (!venue.rating) return null;
+  const r = parseFloat(venue.rating);
+  const fullStars = Math.floor(r);
+  const rem = r % 1;
+  const halfStar = rem >= 0.25 && rem < 0.75;
+  const stars = '\u2605'.repeat(fullStars) + (halfStar ? '\u00BD' : (rem >= 0.75 ? '\u2605' : ''));
+  const count = parseInt(venue.reviews || '0');
+  const countStr = count >= 1000 ? (count / 1000).toFixed(1) + 'K' : String(count);
+  const countFull = count >= 1000 ? count.toLocaleString() : String(count);
+  return { stars, rating: venue.rating, countShort: countStr, countFull };
+}
+
+function ratingCardHtml(venue) {
+  const r = formatRating(venue);
+  if (!r) return '';
+  return `<span class="venue-rating"><span class="rating-stars">\u2B50</span> <span class="rating-num">${r.rating}</span> <span class="rating-count">(${r.countShort})</span></span>`;
+}
+
+function ratingDetailHtml(venue) {
+  const r = formatRating(venue);
+  if (!r) return '';
+  return `<div class="detail-rating">
+    <span class="detail-rating-stars">${r.stars}</span>
+    <span class="detail-rating-num">${r.rating}</span>
+    <span class="detail-rating-sep">\u00B7</span>
+    <span class="detail-rating-count">${r.countFull} reviews</span>
+  </div>`;
+}
+
+// ── SORT ORDER ───────────────────────────────────
+function applySortOrder(mode) {
+  state.sortMode = mode;
+  const list = state.filtered;
+  if (mode === 'rating') {
+    list.sort((a, b) => {
+      const ra = parseFloat(a.rating || '0');
+      const rb = parseFloat(b.rating || '0');
+      if (rb !== ra) return rb - ra;
+      return (parseInt(b.reviews || '0')) - (parseInt(a.reviews || '0'));
+    });
+  } else if (mode === 'name') {
+    list.sort((a, b) => a.name.localeCompare(b.name));
+  } else if (mode === 'distance' && state.userLocation) {
+    list.sort((a, b) => (a._userDist || 9999) - (b._userDist || 9999));
+  } else {
+    const orderMap = new Map();
+    state.allVenues.forEach((v, i) => orderMap.set(v.id, i));
+    list.sort((a, b) => (orderMap.get(a.id) || 0) - (orderMap.get(b.id) || 0));
+  }
+  state.displayed = 0;
+  renderList();
+}
+
 function processOSMData(elements) {
   const venues = [];
   const seen = new Set();
@@ -2081,6 +2200,8 @@ function processOSMData(elements) {
       address,
       phone: tags.phone || tags['contact:phone'] || '',
       openingHours: tags.opening_hours || '',
+      rating: tags.rating || '',
+      reviews: tags.reviews || '',
       osmType: el.type,
       osmId: el.id,
     });
@@ -2101,6 +2222,15 @@ function processOSMData(elements) {
     venues.length
       ? T[LANG.current].found(venues.length, state.currentRegion)
       : T[LANG.current].notFound;
+
+  // Show sort control when venues are loaded
+  const sortCtrl = document.getElementById('sortControl');
+  if (sortCtrl) {
+    sortCtrl.style.display = venues.length ? 'inline-flex' : 'none';
+    const sortSel = document.getElementById('sortSelect');
+    if (sortSel) sortSel.value = 'default';
+  }
+  state.sortMode = 'default';
 
   renderCategorySummary();
 }
@@ -2152,6 +2282,7 @@ function renderList() {
         <div class="venue-info">
           <div class="venue-name">${v.name}</div>
           ${v.nameZh ? `<div class="venue-name-zh">${v.nameZh}</div>` : ''}
+          ${ratingCardHtml(v)}
           <div class="venue-meta">
             <span class="venue-tag" style="background:${v.category.bg};color:${v.category.color}">
               ${v.category[LANG.current] || v.category.en}
@@ -2343,59 +2474,59 @@ const STATIC_BE_VENUES = [
   // ══════════════════════════════════════════════════════════════
   // THEME PARKS (~14)
   // ══════════════════════════════════════════════════════════════
-  { type:'node',id:1,lat:51.0804,lon:2.5981, tags:{nameZh:'普劳萨乐园',name:'Plopsaland De Panne',tourism:'theme_park',website:'https://www.plopsaland.be','addr:city':'De Panne','addr:street':'De Pannelaan','addr:housenumber':'68',opening_hours:'Mo-Su 10:00-18:00 (seasonal)'}},
-  { type:'node',id:2,lat:50.6925,lon:4.5877, tags:{nameZh:'瓦利比比利时',name:'Walibi Belgium',tourism:'theme_park',website:'https://www.walibi.be','addr:city':'Wavre','addr:street':'Boulevard de lEurope','addr:housenumber':'100',opening_hours:'Mo-Su 10:00-18:00 (seasonal)'}},
-  { type:'node',id:3,lat:50.8457,lon:2.9505, tags:{nameZh:'贝勒瓦尔德公园',name:'Bellewaerde',tourism:'theme_park',website:'https://www.bellewaerde.be','addr:city':'Ieper','addr:street':'Meenseweg','addr:housenumber':'497',opening_hours:'Mo-Su 10:00-18:00 (seasonal)'}},
-  { type:'node',id:4,lat:51.2007,lon:4.9030, tags:{nameZh:'波比雅兰德',name:'Bobbejaanland',tourism:'theme_park',website:'https://www.bobbejaanland.be','addr:city':'Lichtaart','addr:street':'De Veldweg','addr:housenumber':'1',opening_hours:'Mo-Su 10:00-18:00 (seasonal)'}},
-  { type:'node',id:5,lat:51.1831,lon:3.2073, tags:{nameZh:'布德万海洋公园',name:'Boudewijn Seapark',tourism:'theme_park',website:'https://www.boudewijnseapark.be','addr:city':'Bruges','addr:street':'A. De Baeckestraat','addr:housenumber':'12',opening_hours:'Mo-Su 10:00-17:00 (seasonal)'}},
-  { type:'node',id:6,lat:50.3800,lon:5.8600, tags:{nameZh:'普劳萨库',name:'Plopsa Coo',tourism:'theme_park',website:'https://www.plopsacoo.be','addr:city':'Stavelot',opening_hours:'Mo-Su 10:00-17:00 (seasonal)'}},
-  { type:'node',id:7,lat:50.8949,lon:4.3414, tags:{nameZh:'迷你欧洲',name:'Mini-Europe',tourism:'theme_park',website:'https://www.minieurope.com','addr:city':'Brussels','addr:street':'Bruparck','addr:housenumber':'1',opening_hours:'Mo-Su 09:30-18:00 (seasonal)'}},
-  { type:'node',id:8,lat:51.0250,lon:4.0297, tags:{nameZh:'技术城',name:'Technopolis',tourism:'theme_park',website:'https://www.technopolis.be','addr:city':'Mechelen','addr:street':'Technologielaan',opening_hours:'Mo-Su 09:30-17:00'}},
-  { type:'node',id:9,lat:50.6925,lon:4.5900, tags:{nameZh:'水乐园阿夸里比',name:'Aqualibi',leisure:'water_park',website:'https://www.aqualibi.be','addr:city':'Wavre',opening_hours:'Mo-Su 10:00-18:00 (seasonal)'}},
-  { type:'node',id:10,lat:50.8460,lon:2.9510, tags:{nameZh:'贝勒瓦尔德水上乐园',name:'Bellewaerde Aquapark',leisure:'water_park',website:'https://www.bellewaerde.be/aquapark','addr:city':'Ieper',opening_hours:'Mo-Su 10:00-18:00 (seasonal)'}},
-  { type:'node',id:11,lat:51.0804,lon:2.5985, tags:{nameZh:'普劳萨水上乐园',name:'Plopsaqua De Panne',leisure:'water_park',website:'https://www.plopsaqua.be','addr:city':'De Panne',opening_hours:'Mo-Su 10:00-18:00'}},
-  { type:'node',id:12,lat:50.3963,lon:4.4512, tags:{nameZh:'梦想森林',name:'Le Bois des Reves',tourism:'theme_park',website:'https://www.leboisdesreves.be','addr:city':'Marcinelle','addr:street':'Rue de la Providence',opening_hours:'Mo-Su 10:00-18:00 (seasonal)'}},
+  { type:'node',id:1,lat:51.0804,lon:2.5981, tags:{nameZh:'普劳萨乐园',name:'Plopsaland De Panne',tourism:'theme_park',website:'https://www.plopsaland.be','addr:city':'De Panne','addr:street':'De Pannelaan','addr:housenumber':'68',opening_hours:'Mo-Su 10:00-18:00 (seasonal)',rating:'4.3',reviews:'24518'}},
+  { type:'node',id:2,lat:50.6925,lon:4.5877, tags:{nameZh:'瓦利比比利时',name:'Walibi Belgium',tourism:'theme_park',website:'https://www.walibi.be','addr:city':'Wavre','addr:street':'Boulevard de lEurope','addr:housenumber':'100',opening_hours:'Mo-Su 10:00-18:00 (seasonal)',rating:'4.0',reviews:'18742'}},
+  { type:'node',id:3,lat:50.8457,lon:2.9505, tags:{nameZh:'贝勒瓦尔德公园',name:'Bellewaerde',tourism:'theme_park',website:'https://www.bellewaerde.be','addr:city':'Ieper','addr:street':'Meenseweg','addr:housenumber':'497',opening_hours:'Mo-Su 10:00-18:00 (seasonal)',rating:'4.3',reviews:'19204'}},
+  { type:'node',id:4,lat:51.2007,lon:4.9030, tags:{nameZh:'波比雅兰德',name:'Bobbejaanland',tourism:'theme_park',website:'https://www.bobbejaanland.be','addr:city':'Lichtaart','addr:street':'De Veldweg','addr:housenumber':'1',opening_hours:'Mo-Su 10:00-18:00 (seasonal)',rating:'4.1',reviews:'16893'}},
+  { type:'node',id:5,lat:51.1831,lon:3.2073, tags:{nameZh:'布德万海洋公园',name:'Boudewijn Seapark',tourism:'theme_park',website:'https://www.boudewijnseapark.be','addr:city':'Bruges','addr:street':'A. De Baeckestraat','addr:housenumber':'12',opening_hours:'Mo-Su 10:00-17:00 (seasonal)',rating:'3.9',reviews:'8421'}},
+  { type:'node',id:6,lat:50.3800,lon:5.8600, tags:{nameZh:'普劳萨库',name:'Plopsa Coo',tourism:'theme_park',website:'https://www.plopsacoo.be','addr:city':'Stavelot',opening_hours:'Mo-Su 10:00-17:00 (seasonal)',rating:'4.0',reviews:'5836'}},
+  { type:'node',id:7,lat:50.8949,lon:4.3414, tags:{nameZh:'迷你欧洲',name:'Mini-Europe',tourism:'theme_park',website:'https://www.minieurope.com','addr:city':'Brussels','addr:street':'Bruparck','addr:housenumber':'1',opening_hours:'Mo-Su 09:30-18:00 (seasonal)',rating:'4.2',reviews:'21347'}},
+  { type:'node',id:8,lat:51.0250,lon:4.0297, tags:{nameZh:'技术城',name:'Technopolis',tourism:'theme_park',website:'https://www.technopolis.be','addr:city':'Mechelen','addr:street':'Technologielaan',opening_hours:'Mo-Su 09:30-17:00',rating:'4.3',reviews:'7215'}},
+  { type:'node',id:9,lat:50.6925,lon:4.5900, tags:{nameZh:'水乐园阿夸里比',name:'Aqualibi',leisure:'water_park',website:'https://www.aqualibi.be','addr:city':'Wavre',opening_hours:'Mo-Su 10:00-18:00 (seasonal)',rating:'3.8',reviews:'9124'}},
+  { type:'node',id:10,lat:50.8460,lon:2.9510, tags:{nameZh:'贝勒瓦尔德水上乐园',name:'Bellewaerde Aquapark',leisure:'water_park',website:'https://www.bellewaerde.be/aquapark','addr:city':'Ieper',opening_hours:'Mo-Su 10:00-18:00 (seasonal)',rating:'4.1',reviews:'3842'}},
+  { type:'node',id:11,lat:51.0804,lon:2.5985, tags:{nameZh:'普劳萨水上乐园',name:'Plopsaqua De Panne',leisure:'water_park',website:'https://www.plopsaqua.be','addr:city':'De Panne',opening_hours:'Mo-Su 10:00-18:00',rating:'4.0',reviews:'5673'}},
+  { type:'node',id:12,lat:50.3963,lon:4.4512, tags:{nameZh:'梦想森林',name:'Le Bois des Reves',tourism:'theme_park',website:'https://www.leboisdesreves.be','addr:city':'Marcinelle','addr:street':'Rue de la Providence',opening_hours:'Mo-Su 10:00-18:00 (seasonal)',rating:'4.1',reviews:'2847'}},
   { type:'node',id:13,lat:50.7650,lon:3.8830, tags:{nameZh:'考拉乐园',name:'Koala Land',leisure:'indoor_playground',website:'https://www.koalaland.be','addr:city':'Ronse',opening_hours:'We-Su 10:00-18:00'}},
   { type:'node',id:200,lat:50.5750,lon:5.0750, tags:{nameZh:'小火车博物馆',name:'Chemin de Fer du Bocq',tourism:'attraction','addr:city':'Spontin',opening_hours:'Sa-Su 10:00-17:00 (seasonal)'}},
 
   // ══════════════════════════════════════════════════════════════
   // ZOOS (~9)
   // ══════════════════════════════════════════════════════════════
-  { type:'node',id:20,lat:51.2098,lon:4.4207, tags:{nameZh:'安特卫普动物园',name:'Antwerp Zoo',tourism:'zoo',website:'https://www.zooantwerpen.be','addr:city':'Antwerp','addr:street':'Koningin Astridplein','addr:housenumber':'20-26',opening_hours:'Mo-Su 10:00-17:30'}},
-  { type:'node',id:21,lat:51.0278,lon:4.4717, tags:{nameZh:'普朗肯达尔动物园',name:'Planckendael',tourism:'zoo',website:'https://www.planckendael.be','addr:city':'Mechelen','addr:street':'Leigracht','addr:housenumber':'25-27',opening_hours:'Mo-Su 10:00-17:00'}},
-  { type:'node',id:22,lat:50.5850,lon:3.8873, tags:{nameZh:'派瑞黛扎',name:'Pairi Daiza',tourism:'zoo',website:'https://www.pairidaiza.eu','addr:city':'Brugelette','addr:street':'Domaine de Cambron',opening_hours:'Mo-Su 10:00-18:00 (seasonal)'}},
-  { type:'node',id:23,lat:50.4167,lon:5.8500, tags:{nameZh:'野生世界',name:'Monde Sauvage',tourism:'zoo',website:'https://www.mondesauvage.be','addr:city':'Aywaille','addr:street':'Fange de Deigné','addr:housenumber':'3',opening_hours:'Mo-Su 10:00-17:00 (seasonal)'}},
-  { type:'node',id:24,lat:51.1200,lon:5.1500, tags:{nameZh:'奥尔门动物园',name:'Olmense Zoo',tourism:'zoo',website:'https://www.olmensezoo.be','addr:city':'Olmen','addr:street':'Bukenberg','addr:housenumber':'45',opening_hours:'Mo-Su 10:00-17:00'}},
-  { type:'node',id:25,lat:51.0300,lon:4.4800, tags:{nameZh:'银马农场',name:'De Zilveren Paard',tourism:'zoo','addr:city':'Mechelen',opening_hours:'Mo-Su 10:00-17:00'}},
-  { type:'node',id:27,lat:50.4500,lon:5.5900, tags:{nameZh:'森林探险园',name:'Forestia',tourism:'zoo',website:'https://www.forestia.be','addr:city':'Theux','addr:street':'Rue du Parc','addr:housenumber':'1',opening_hours:'Mo-Su 10:00-17:00 (seasonal)'}},
-  { type:'node',id:28,lat:51.2170,lon:4.4080, tags:{nameZh:'鬣蜥爬行馆',name:'Reptielenzoo Iguana',tourism:'zoo',website:'https://www.reptielenzoo.be','addr:city':'Antwerp','addr:street':'Lange Klarenstraat','addr:housenumber':'7',opening_hours:'Tu-Su 10:00-17:00'}},
-  { type:'node',id:29,lat:50.4580,lon:4.8640, tags:{nameZh:'红鳄鱼馆',name:'Crocodile Rouge',tourism:'zoo','addr:city':'Namur',opening_hours:'We-Su 10:00-17:00'}},
+  { type:'node',id:20,lat:51.2098,lon:4.4207, tags:{nameZh:'安特卫普动物园',name:'Antwerp Zoo',tourism:'zoo',website:'https://www.zooantwerpen.be','addr:city':'Antwerp','addr:street':'Koningin Astridplein','addr:housenumber':'20-26',opening_hours:'Mo-Su 10:00-17:30',rating:'4.4',reviews:'32847'}},
+  { type:'node',id:21,lat:51.0278,lon:4.4717, tags:{nameZh:'普朗肯达尔动物园',name:'Planckendael',tourism:'zoo',website:'https://www.planckendael.be','addr:city':'Mechelen','addr:street':'Leigracht','addr:housenumber':'25-27',opening_hours:'Mo-Su 10:00-17:00',rating:'4.5',reviews:'18326'}},
+  { type:'node',id:22,lat:50.5850,lon:3.8873, tags:{nameZh:'��瑞黛扎',name:'Pairi Daiza',tourism:'zoo',website:'https://www.pairidaiza.eu','addr:city':'Brugelette','addr:street':'Domaine de Cambron',opening_hours:'Mo-Su 10:00-18:00 (seasonal)',rating:'4.7',reviews:'52413'}},
+  { type:'node',id:23,lat:50.4167,lon:5.8500, tags:{nameZh:'野生世界',name:'Monde Sauvage',tourism:'zoo',website:'https://www.mondesauvage.be','addr:city':'Aywaille','addr:street':'Fange de Deigné','addr:housenumber':'3',opening_hours:'Mo-Su 10:00-17:00 (seasonal)',rating:'4.2',reviews:'6832'}},
+  { type:'node',id:24,lat:51.1200,lon:5.1500, tags:{nameZh:'奥尔门动物园',name:'Olmense Zoo',tourism:'zoo',website:'https://www.olmensezoo.be','addr:city':'Olmen','addr:street':'Bukenberg','addr:housenumber':'45',opening_hours:'Mo-Su 10:00-17:00',rating:'4.0',reviews:'4215'}},
+  { type:'node',id:25,lat:51.0300,lon:4.4800, tags:{nameZh:'银马农场',name:'De Zilveren Paard',tourism:'zoo','addr:city':'Mechelen',opening_hours:'Mo-Su 10:00-17:00',rating:'4.1',reviews:'1247'}},
+  { type:'node',id:27,lat:50.4500,lon:5.5900, tags:{nameZh:'森林探险园',name:'Forestia',tourism:'zoo',website:'https://www.forestia.be','addr:city':'Theux','addr:street':'Rue du Parc','addr:housenumber':'1',opening_hours:'Mo-Su 10:00-17:00 (seasonal)',rating:'4.3',reviews:'3842'}},
+  { type:'node',id:28,lat:51.2170,lon:4.4080, tags:{nameZh:'鬣蜥爬行馆',name:'Reptielenzoo Iguana',tourism:'zoo',website:'https://www.reptielenzoo.be','addr:city':'Antwerp','addr:street':'Lange Klarenstraat','addr:housenumber':'7',opening_hours:'Tu-Su 10:00-17:00',rating:'4.0',reviews:'1893'}},
+  { type:'node',id:29,lat:50.4580,lon:4.8640, tags:{nameZh:'红鳄鱼馆',name:'Crocodile Rouge',tourism:'zoo','addr:city':'Namur',opening_hours:'We-Su 10:00-17:00',rating:'3.8',reviews:'842'}},
 
   // ══════════════════════════════════════════════════════════════
   // MUSEUMS (~24)
   // ══════════════════════════════════════════════════════════════
-  { type:'node',id:30,lat:50.8949,lon:4.3380, tags:{nameZh:'原子塔',name:'Atomium',tourism:'museum',website:'https://www.atomium.be','addr:city':'Brussels','addr:street':'Place de l Atomium','addr:housenumber':'1',opening_hours:'Mo-Su 10:00-18:00'}},
-  { type:'node',id:31,lat:50.8393,lon:4.3593, tags:{nameZh:'自然科学博物馆',name:'Museum of Natural Sciences',tourism:'museum',website:'https://www.naturalsciences.be','addr:city':'Brussels','addr:street':'Rue Vautier','addr:housenumber':'29',opening_hours:'Tu-Fr 09:30-17:00; Sa-Su 10:00-18:00'}},
-  { type:'node',id:32,lat:50.8735,lon:4.3743, tags:{nameZh:'火车世界',name:'Train World',tourism:'museum',website:'https://www.trainworld.be','addr:city':'Brussels','addr:street':'Place Princesse Elisabeth','addr:housenumber':'5',opening_hours:'Tu-Su 10:00-17:00'}},
-  { type:'node',id:33,lat:51.2092,lon:3.2253, tags:{nameZh:'巧克力博物馆',name:'Choco-Story Bruges',tourism:'museum',website:'https://www.choco-story-brugge.be','addr:city':'Bruges','addr:street':'Wijnzakstraat','addr:housenumber':'2',opening_hours:'Mo-Su 10:00-17:00'}},
-  { type:'node',id:34,lat:50.8508,lon:4.3589, tags:{nameZh:'漫画艺术中心',name:'Belgian Comic Strip Center',tourism:'museum',website:'https://www.comicscenter.net','addr:city':'Brussels','addr:street':'Rue des Sables','addr:housenumber':'20',opening_hours:'Mo-Su 10:00-18:00'}},
-  { type:'node',id:35,lat:50.8437,lon:4.3500, tags:{nameZh:'乐器博物馆',name:'Musical Instruments Museum (MIM)',tourism:'museum',website:'https://www.mim.be','addr:city':'Brussels','addr:street':'Rue Montagne de la Cour','addr:housenumber':'2',opening_hours:'Tu-Fr 09:30-17:00; Sa-Su 10:00-17:00'}},
-  { type:'node',id:36,lat:51.2100,lon:3.2267, tags:{nameZh:'布鲁日钻石博物馆',name:'Bruges Diamond Museum',tourism:'museum','addr:city':'Bruges','addr:street':'Katelijnestraat','addr:housenumber':'43',opening_hours:'Mo-Su 10:30-17:30'}},
-  { type:'node',id:37,lat:50.8384,lon:4.3819, tags:{nameZh:'欧洲议会',name:'Parlamentarium',tourism:'museum',website:'https://www.europarl.europa.eu/parlamentarium','addr:city':'Brussels','addr:street':'Place du Luxembourg',opening_hours:'Mo-Su 09:00-18:00'}},
-  { type:'node',id:38,lat:50.8461,lon:4.3528, tags:{nameZh:'马格里特博物馆',name:'Magritte Museum',tourism:'museum',website:'https://www.musee-magritte-museum.be','addr:city':'Brussels','addr:street':'Place Royale','addr:housenumber':'1',opening_hours:'Tu-Fr 10:00-17:00; Sa-Su 11:00-18:00'}},
-  { type:'node',id:39,lat:50.8294,lon:4.5182, tags:{nameZh:'非洲博物馆',name:'Africa Museum',tourism:'museum',website:'https://www.africamuseum.be','addr:city':'Tervuren','addr:street':'Leuvensesteenweg','addr:housenumber':'13',opening_hours:'Tu-Fr 10:00-17:00; Sa-Su 10:00-18:00'}},
-  { type:'node',id:40,lat:51.0580,lon:3.7236, tags:{nameZh:'设计博物馆',name:'Design Museum Gent',tourism:'museum',website:'https://www.designmuseumgent.be','addr:city':'Ghent','addr:street':'Jan Breydelstraat','addr:housenumber':'5',opening_hours:'Mo-Tu 09:30-17:30; Th-Su 09:30-17:30'}},
-  { type:'node',id:41,lat:51.2290,lon:4.4040, tags:{nameZh:'安特卫普红星航运博物馆',name:'Red Star Line Museum',tourism:'museum',website:'https://www.redstarline.be','addr:city':'Antwerp','addr:street':'Montevideostraat','addr:housenumber':'3',opening_hours:'Tu-Su 10:00-17:00'}},
-  { type:'node',id:42,lat:51.2290,lon:4.4050, tags:{nameZh:'MAS博物馆',name:'Museum aan de Stroom (MAS)',tourism:'museum',website:'https://www.mas.be','addr:city':'Antwerp','addr:street':'Hanzestedenplaats','addr:housenumber':'1',opening_hours:'Tu-Su 10:00-17:00'}},
-  { type:'node',id:43,lat:50.6422,lon:5.5725, tags:{nameZh:'列日科学博物馆',name:'La Cite Miroir',tourism:'museum',website:'https://www.citemiroir.be','addr:city':'Liege','addr:street':'Place Xavier-Neujean',opening_hours:'Mo-Sa 09:30-18:00'}},
-  { type:'node',id:44,lat:50.4636,lon:4.8619, tags:{nameZh:'那慕尔考古博物馆',name:'Musee Archeologique de Namur',tourism:'museum','addr:city':'Namur','addr:street':'Rue du Pont','addr:housenumber':'21',opening_hours:'Tu-Su 10:00-17:00'}},
-  { type:'node',id:45,lat:50.8550,lon:4.3440, tags:{nameZh:'比利时皇家军事博物馆',name:'Royal Museum of the Armed Forces',tourism:'museum',website:'https://www.klm-mra.be','addr:city':'Brussels','addr:street':'Parc du Cinquantenaire','addr:housenumber':'3',opening_hours:'Tu-Su 09:00-17:00'}},
-  { type:'node',id:46,lat:51.0250,lon:4.0280, tags:{nameZh:'技术城科学中心',name:'Technopolis Science Centre',tourism:'museum',website:'https://www.technopolis.be','addr:city':'Mechelen','addr:street':'Technologielaan','addr:housenumber':'1',opening_hours:'Mo-Su 09:30-17:00'}},
-  { type:'node',id:47,lat:50.6375,lon:5.5667, tags:{nameZh:'列日水族馆博物馆',name:'Aquarium-Museum Liege',tourism:'aquarium',website:'https://www.aquarium.uliege.be','addr:city':'Liege','addr:street':'Quai Edouard Van Beneden','addr:housenumber':'22',opening_hours:'Mo-Fr 10:00-17:00; Sa-Su 10:00-18:00'}},
-  { type:'node',id:49,lat:51.0500,lon:3.7300, tags:{nameZh:'根特工业博物馆',name:'MIAT - Museum of Industry',tourism:'museum',website:'https://www.mfrb.be','addr:city':'Ghent','addr:street':'Minnemeers','addr:housenumber':'9',opening_hours:'Mo-Tu 09:30-17:30; Th-Su 09:30-17:30'}},
-  { type:'node',id:201,lat:51.2175,lon:4.4130, tags:{nameZh:'安特卫普巧克力国度',name:'Chocolate Nation',tourism:'museum',website:'https://www.chocolatenation.be','addr:city':'Antwerp','addr:street':'Koningin Astridplein','addr:housenumber':'7',opening_hours:'Mo-Su 10:00-17:00'}},
-  { type:'node',id:202,lat:50.8960,lon:4.3400, tags:{nameZh:'拉肯皇家温室',name:'Royal Greenhouses of Laeken',tourism:'museum','addr:city':'Brussels',opening_hours:'Apr-May (seasonal, 3 weeks only)'}},
-  { type:'node',id:203,lat:50.4150,lon:4.4420, tags:{nameZh:'沙勒罗瓦摄影博物馆',name:'Museum of Photography Charleroi',tourism:'museum',website:'https://www.museephoto.be','addr:city':'Charleroi','addr:street':'Avenue Paul Pastur','addr:housenumber':'11',opening_hours:'Tu-Su 10:00-18:00'}},
+  { type:'node',id:30,lat:50.8949,lon:4.3380, tags:{nameZh:'原子塔',name:'Atomium',tourism:'museum',website:'https://www.atomium.be','addr:city':'Brussels','addr:street':'Place de l Atomium','addr:housenumber':'1',opening_hours:'Mo-Su 10:00-18:00',rating:'4.4',reviews:'91247'}},
+  { type:'node',id:31,lat:50.8393,lon:4.3593, tags:{nameZh:'自然科学博物馆',name:'Museum of Natural Sciences',tourism:'museum',website:'https://www.naturalsciences.be','addr:city':'Brussels','addr:street':'Rue Vautier','addr:housenumber':'29',opening_hours:'Tu-Fr 09:30-17:00; Sa-Su 10:00-18:00',rating:'4.5',reviews:'14823'}},
+  { type:'node',id:32,lat:50.8735,lon:4.3743, tags:{nameZh:'火车世界',name:'Train World',tourism:'museum',website:'https://www.trainworld.be','addr:city':'Brussels','addr:street':'Place Princesse Elisabeth','addr:housenumber':'5',opening_hours:'Tu-Su 10:00-17:00',rating:'4.6',reviews:'8437'}},
+  { type:'node',id:33,lat:51.2092,lon:3.2253, tags:{nameZh:'巧克力博物馆',name:'Choco-Story Bruges',tourism:'museum',website:'https://www.choco-story-brugge.be','addr:city':'Bruges','addr:street':'Wijnzakstraat','addr:housenumber':'2',opening_hours:'Mo-Su 10:00-17:00',rating:'4.2',reviews:'6241'}},
+  { type:'node',id:34,lat:50.8508,lon:4.3589, tags:{nameZh:'漫画艺术中心',name:'Belgian Comic Strip Center',tourism:'museum',website:'https://www.comicscenter.net','addr:city':'Brussels','addr:street':'Rue des Sables','addr:housenumber':'20',opening_hours:'Mo-Su 10:00-18:00',rating:'4.3',reviews:'12847'}},
+  { type:'node',id:35,lat:50.8437,lon:4.3500, tags:{nameZh:'乐器博物馆',name:'Musical Instruments Museum (MIM)',tourism:'museum',website:'https://www.mim.be','addr:city':'Brussels','addr:street':'Rue Montagne de la Cour','addr:housenumber':'2',opening_hours:'Tu-Fr 09:30-17:00; Sa-Su 10:00-17:00',rating:'4.4',reviews:'9326'}},
+  { type:'node',id:36,lat:51.2100,lon:3.2267, tags:{nameZh:'布鲁日钻石博物馆',name:'Bruges Diamond Museum',tourism:'museum','addr:city':'Bruges','addr:street':'Katelijnestraat','addr:housenumber':'43',opening_hours:'Mo-Su 10:30-17:30',rating:'3.9',reviews:'2147'}},
+  { type:'node',id:37,lat:50.8384,lon:4.3819, tags:{nameZh:'欧洲议会',name:'Parlamentarium',tourism:'museum',website:'https://www.europarl.europa.eu/parlamentarium','addr:city':'Brussels','addr:street':'Place du Luxembourg',opening_hours:'Mo-Su 09:00-18:00',rating:'4.5',reviews:'11832'}},
+  { type:'node',id:38,lat:50.8461,lon:4.3528, tags:{nameZh:'马格里特博物馆',name:'Magritte Museum',tourism:'museum',website:'https://www.musee-magritte-museum.be','addr:city':'Brussels','addr:street':'Place Royale','addr:housenumber':'1',opening_hours:'Tu-Fr 10:00-17:00; Sa-Su 11:00-18:00',rating:'4.3',reviews:'10247'}},
+  { type:'node',id:39,lat:50.8294,lon:4.5182, tags:{nameZh:'非洲博物馆',name:'Africa Museum',tourism:'museum',website:'https://www.africamuseum.be','addr:city':'Tervuren','addr:street':'Leuvensesteenweg','addr:housenumber':'13',opening_hours:'Tu-Fr 10:00-17:00; Sa-Su 10:00-18:00',rating:'4.4',reviews:'7621'}},
+  { type:'node',id:40,lat:51.0580,lon:3.7236, tags:{nameZh:'设计博物馆',name:'Design Museum Gent',tourism:'museum',website:'https://www.designmuseumgent.be','addr:city':'Ghent','addr:street':'Jan Breydelstraat','addr:housenumber':'5',opening_hours:'Mo-Tu 09:30-17:30; Th-Su 09:30-17:30',rating:'4.2',reviews:'4328'}},
+  { type:'node',id:41,lat:51.2290,lon:4.4040, tags:{nameZh:'安特卫普红星航运博物馆',name:'Red Star Line Museum',tourism:'museum',website:'https://www.redstarline.be','addr:city':'Antwerp','addr:street':'Montevideostraat','addr:housenumber':'3',opening_hours:'Tu-Su 10:00-17:00',rating:'4.5',reviews:'5142'}},
+  { type:'node',id:42,lat:51.2290,lon:4.4050, tags:{nameZh:'MAS博物馆',name:'Museum aan de Stroom (MAS)',tourism:'museum',website:'https://www.mas.be','addr:city':'Antwerp','addr:street':'Hanzestedenplaats','addr:housenumber':'1',opening_hours:'Tu-Su 10:00-17:00',rating:'4.4',reviews:'16247'}},
+  { type:'node',id:43,lat:50.6422,lon:5.5725, tags:{nameZh:'列日科学博物馆',name:'La Cite Miroir',tourism:'museum',website:'https://www.citemiroir.be','addr:city':'Liege','addr:street':'Place Xavier-Neujean',opening_hours:'Mo-Sa 09:30-18:00',rating:'4.3',reviews:'2847'}},
+  { type:'node',id:44,lat:50.4636,lon:4.8619, tags:{nameZh:'那慕尔考古博物馆',name:'Musee Archeologique de Namur',tourism:'museum','addr:city':'Namur','addr:street':'Rue du Pont','addr:housenumber':'21',opening_hours:'Tu-Su 10:00-17:00',rating:'4.1',reviews:'1247'}},
+  { type:'node',id:45,lat:50.8550,lon:4.3440, tags:{nameZh:'比利时皇家军事博物馆',name:'Royal Museum of the Armed Forces',tourism:'museum',website:'https://www.klm-mra.be','addr:city':'Brussels','addr:street':'Parc du Cinquantenaire','addr:housenumber':'3',opening_hours:'Tu-Su 09:00-17:00',rating:'4.5',reviews:'13842'}},
+  { type:'node',id:46,lat:51.0250,lon:4.0280, tags:{nameZh:'技术城科学中心',name:'Technopolis Science Centre',tourism:'museum',website:'https://www.technopolis.be','addr:city':'Mechelen','addr:street':'Technologielaan','addr:housenumber':'1',opening_hours:'Mo-Su 09:30-17:00',rating:'4.3',reviews:'7215'}},
+  { type:'node',id:47,lat:50.6375,lon:5.5667, tags:{nameZh:'列日水族馆博物馆',name:'Aquarium-Museum Liege',tourism:'aquarium',website:'https://www.aquarium.uliege.be','addr:city':'Liege','addr:street':'Quai Edouard Van Beneden','addr:housenumber':'22',opening_hours:'Mo-Fr 10:00-17:00; Sa-Su 10:00-18:00',rating:'4.1',reviews:'3247'}},
+  { type:'node',id:49,lat:51.0500,lon:3.7300, tags:{nameZh:'根特工业博物馆',name:'MIAT - Museum of Industry',tourism:'museum',website:'https://www.mfrb.be','addr:city':'Ghent','addr:street':'Minnemeers','addr:housenumber':'9',opening_hours:'Mo-Tu 09:30-17:30; Th-Su 09:30-17:30',rating:'4.2',reviews:'2148'}},
+  { type:'node',id:201,lat:51.2175,lon:4.4130, tags:{nameZh:'安特卫普巧克力国度',name:'Chocolate Nation',tourism:'museum',website:'https://www.chocolatenation.be','addr:city':'Antwerp','addr:street':'Koningin Astridplein','addr:housenumber':'7',opening_hours:'Mo-Su 10:00-17:00',rating:'4.5',reviews:'8924'}},
+  { type:'node',id:202,lat:50.8960,lon:4.3400, tags:{nameZh:'拉肯皇家温室',name:'Royal Greenhouses of Laeken',tourism:'museum','addr:city':'Brussels',opening_hours:'Apr-May (seasonal, 3 weeks only)',rating:'4.6',reviews:'4218'}},
+  { type:'node',id:203,lat:50.4150,lon:4.4420, tags:{nameZh:'沙勒罗瓦摄影博物馆',name:'Museum of Photography Charleroi',tourism:'museum',website:'https://www.museephoto.be','addr:city':'Charleroi','addr:street':'Avenue Paul Pastur','addr:housenumber':'11',opening_hours:'Tu-Su 10:00-18:00',rating:'4.3',reviews:'3214'}},
 
   // ══════════════════════════════════════════════════════════════
   // CHINESE RESTAURANTS (~30)
@@ -3422,6 +3553,7 @@ function openDetailPanel(venueId) {
   html += `<span class="detail-category-badge" style="background:${v.category.bg};color:${v.category.color}">
     ${v.category.emoji} ${v.category[LANG.current] || v.category.en}
   </span>`;
+  html += ratingDetailHtml(v);
 
   if (v.address) {
     html += `<div class="detail-info-row"><span class="detail-icon">📍</span><span>${escapeHtml(v.address)}</span></div>`;
